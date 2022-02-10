@@ -1,0 +1,139 @@
+/** 
+ * Author: Max Wiseltier - max.wiseltier@sonder.com
+ * Last Updated: 2/09/2022
+ */
+
+/** 
+ * Grabs PLP tab from UW Model Template and pushed to models in 2021 Signings tab
+ * PARAMS {NULL}
+ */
+function pushPlpTabToModels() {
+  try{
+    /** 
+     * Get tab from UW model
+     */
+    //Open UW model and store as variable
+    var uwModelTemplate = SpreadsheetApp.openByUrl("https://docs.google.com/spreadsheets/d/1ohs1atYj83_Po03ARbYDBuzoS67WHRnxC4Znnj9Ajs8/edit#gid=1036961340");
+    Logger.log("uwModelTemplate: " + uwModelTemplate.getUrl());
+    //Open PLP Tab and store as variable
+    var uwModelTemplatePlpTab = uwModelTemplate.getSheetByName("Module | PLP View of P&L");
+    //Store PLP Tab name as variable
+    var uwModelTemplatePlpTabName = uwModelTemplatePlpTab.getSheetName();
+    Logger.log("uwModelTemplatePlpTabName: " + uwModelTemplatePlpTabName);
+
+    /** 
+     * Push tab to deal models
+     */
+    //Set range of deals
+    var snlCurrentSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    Logger.log("snlCurrentSpreadsheet: " + snlCurrentSpreadsheet.getUrl());
+    var signingsTab2021 = snlCurrentSpreadsheet.getSheetByName("2021 Signings");
+    Logger.log("signingsTab2021 name: " + signingsTab2021.getSheetName());
+    var dealModelRange = signingsTab2021.getRange("AJ2:AJ97");
+
+    //Create array of models to update
+    var modelsToUpdateArr = dealModelRange.getValues();
+    // Logger.log("modelsToUpdateArr: " + modelsToUpdateArr);
+
+    var modelsUpdatedArr = [],
+        modelsNotUpdatedArr = [];
+    //Iterate through array
+    for(modelIndex in modelsToUpdateArr){
+      // if(modelIndex > 0){
+      //   break;
+      // }
+      var currModelUrl = modelsToUpdateArr[modelIndex].toString();
+      Logger.log("currModelUrl: " + currModelUrl);
+      var currModel = SpreadsheetApp.openByUrl(currModelUrl);
+      
+      //Check for prior updates
+      var existingPlpTab = currModel.getSheetByName(uwModelTemplatePlpTabName);
+      if(existingPlpTab){
+        Logger.log("PLP Tab already in model: " + currModelUrl);
+        continue;
+      }
+
+      //Check for edit access - if no edit access, store in bad models array
+      if(checkEditAccess(currModelUrl)){
+        //Push tab to model and rename tab
+        uwModelTemplatePlpTab.copyTo(currModel).setName(uwModelTemplatePlpTabName);
+        //Reposition sheet in model
+        currModel.getSheetByName(uwModelTemplatePlpTabName).activate();
+        currModel.moveActiveSheet(12);
+        //Store model in good models array
+        modelsUpdatedArr.push(currModelUrl);
+        Logger.log("PLP Tab added to model: " + currModelUrl);
+      } else{
+        //Add model to modelsNotUpdatedArr
+        modelsNotUpdatedArr.push(currModelUrl);
+        Logger.log("PLP Tab not added to model: " + currModelUrl);
+      }
+    }
+    //Send email update with good models updated and bad models not updated
+    var recipient = "max.wiseltier@sonder.com",
+        subject = "PLP Push Results",
+        body = "Models Successfully Updated: " + modelsUpdatedArr.length + "\n\n" 
+                + modelsUpdatedArr + "\n\n" + 
+                "Models Unsuccessfully Updated: " + modelsNotUpdatedArr.length + "\n\n" 
+                + modelsNotUpdatedArr + "\n\n";
+    MailApp.sendEmail(recipient, subject, body);
+  }
+  catch(err){
+    Logger.log(err.stack);
+  }
+}
+
+/** 
+ * This gets the ID from a GDrive URL
+ */
+function getIdFromUrl (url) {
+  Logger.log("Getting ID from: " + url);
+  return url.split("/")[5];
+}
+
+/** 
+ * This checks to see if the model url can be accessed and edited
+ */
+function checkEditAccess(modelUrl) {
+  Logger.log("Checking access permissions of " + modelUrl);
+  try{
+    //Check to see if read access is granted
+    let modelId = getIdFromUrl(modelUrl);
+    Logger.log("Model ID: " + modelId);
+    let modelFile = DriveApp.getFileById(modelId);
+    //Check if Spreadsheet or Excel
+    if(modelFile.getMimeType().includes("office")){
+      Logger.log("Not a google sheet: " + modelUrl);
+      return false;
+    }
+
+    var activeUserEmail = Session.getActiveUser().getEmail();
+
+    if(modelFile.getAccess("max.wiseltier@sonder.com") == "EDIT" 
+    || modelFile.getAccess("everyone@sonder.com") == "EDIT" 
+    || modelFile.getAccess("/hd/domain/sonder.com") == "EDIT"
+    || modelFile.getAccess(activeUserEmail) == "EDIT" 
+    || modelFile.getAccess("max.wiseltier@sonder.com") == "OWNER" 
+    || modelFile.getAccess("everyone@sonder.com") == "OWNER" 
+    || modelFile.getAccess("/hd/domain/sonder.com") == "OWNER"
+    || modelFile.getAccess(activeUserEmail) == "OWNER" 
+    || modelFile.getAccess("max.wiseltier@sonder.com") == "ORGANIZER" 
+    || modelFile.getAccess("everyone@sonder.com") == "ORGANIZER" 
+    || modelFile.getAccess("/hd/domain/sonder.com") == "ORGANIZER"
+    || modelFile.getAccess(activeUserEmail) == "ORGANIZER" 
+    ){
+      Logger.log("Good Access: " + modelUrl);
+      return true;
+    } else {
+      Logger.log("Bad Access: " + modelUrl);
+      Logger.log("MW Access: " + modelFile.getAccess("max.wiseltier@sonder.com"));
+      Logger.log("Everyone Access: " + modelFile.getAccess("everyone@sonder.com"));
+      Logger.log("Domain Access: " + modelFile.getAccess("/hd/domain/sonder.com"));
+      return false;
+    }
+  }
+  catch(err){
+    Logger.log(err.stack);
+    return false;
+  }
+}
